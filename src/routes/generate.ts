@@ -63,7 +63,7 @@ router.post('/:projectId/images', authenticateToken, async (req: AuthRequest, re
           quality: 'standard',
         });
 
-        const imageUrl = response.data[0]?.url;
+        const imageUrl = response.data?.[0]?.url;
 
         if (imageUrl) {
           // 下载图片并上传到 R2
@@ -161,7 +161,7 @@ router.post('/regenerate/:imageId', authenticateToken, async (req: AuthRequest, 
       quality: 'standard',
     });
 
-    const imageUrl = response.data[0]?.url;
+    const imageUrl = response.data?.[0]?.url;
 
     if (!imageUrl) {
       return res.status(500).json({ error: 'Failed to generate image' });

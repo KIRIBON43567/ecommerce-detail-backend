@@ -13,6 +13,7 @@ interface RequestOptions {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const url = `${WORKERS_API_URL}${path}`;
+  
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-API-Key': API_SECRET,
@@ -106,9 +107,11 @@ export const competitorText = {
 export const storage = {
   getUrl: (key: string) => `${WORKERS_API_URL}/api/storage/${key}`,
   
-  upload: async (key: string, file: Buffer, contentType: string) => {
+  upload: async (key: string, file: Buffer | Uint8Array, contentType: string) => {
     const formData = new FormData();
-    formData.append('file', new Blob([file], { type: contentType }), key);
+    // 将 Buffer 转换为 Uint8Array 以确保类型兼容
+    const uint8Array = file instanceof Uint8Array ? file : new Uint8Array(file);
+    formData.append('file', new Blob([uint8Array], { type: contentType }), key);
     formData.append('key', key);
     
     const response = await fetch(`${WORKERS_API_URL}/api/storage/upload`, {
