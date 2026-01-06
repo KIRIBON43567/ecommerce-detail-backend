@@ -6,9 +6,81 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
+// 配置 OpenAI 客户端使用 VectorEngine AI 服务
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.vectorengine.ai/v1',
 });
+
+// 图片生成模型配置
+const IMAGE_MODEL = process.env.IMAGE_MODEL || 'gemini-2.5-flash-image';
+
+// 使用 Gemini 模型生成图片
+async function generateImageWithGemini(prompt: string): Promise<Buffer | null> {
+  try {
+    // 使用 chat completions API 来生成图片（Gemini 图片生成方式）
+    const response = await openai.chat.completions.create({
+      model: IMAGE_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      // @ts-ignore - Gemini 特有参数
+      response_modalities: ['TEXT', 'IMAGE'],
+    });
+
+    // 检查响应中是否有图片数据
+    const message = response.choices[0]?.message;
+    if (message && 'content' in message) {
+      const content = message.content;
+      // 如果返回的是 base64 图片数据
+      if (typeof content === 'string' && content.includes('base64')) {
+        const base64Match = content.match(/data:image\/[^;]+;base64,([^"]+)/);
+        if (base64Match) {
+          return Buffer.from(base64Match[1], 'base64');
+        }
+      }
+    }
+
+    // 尝试使用 images.generate API（兼容 DALL-E 格式）
+    const imageResponse = await openai.images.generate({
+      model: 'gpt-image-1',
+      prompt: prompt,
+      n: 1,
+      size: '1024x1024',
+      response_format: 'b64_json',
+    });
+
+    if (imageResponse.data?.[0]?.b64_json) {
+      return Buffer.from(imageResponse.data[0].b64_json, 'base64');
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error('Gemini image generation error:', error.message);
+    
+    // 降级到 gpt-image-1 模型
+    try {
+      const fallbackResponse = await openai.images.generate({
+        model: 'gpt-image-1',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024',
+        response_format: 'b64_json',
+      });
+
+      if (fallbackResponse.data?.[0]?.b64_json) {
+        return Buffer.from(fallbackResponse.data[0].b64_json, 'base64');
+      }
+    } catch (fallbackError: any) {
+      console.error('Fallback image generation error:', fallbackError.message);
+    }
+
+    return null;
+  }
+}
 
 // 批量生成详情图
 router.post('/:projectId/images', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -54,22 +126,10 @@ router.post('/:projectId/images', authenticateToken, async (req: AuthRequest, re
 - 高品质商业摄影风格
 - 背景干净，突出产品`;
 
-        // 调用 DALL-E 生成图片
-        const response = await openai.images.generate({
-          model: 'dall-e-3',
-          prompt: imagePrompt,
-          n: 1,
-          size: '1024x1792', // 竖版详情图尺寸
-          quality: 'standard',
-        });
+        // 使用 Gemini 生成图片
+        const imageBuffer = await generateImageWithGemini(imagePrompt);
 
-        const imageUrl = response.data?.[0]?.url;
-
-        if (imageUrl) {
-          // 下载图片并上传到 R2
-          const imageResponse = await fetch(imageUrl);
-          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-
+        if (imageBuffer) {
           const r2Key = `projects/${projectId}/generated/${section.id}_${Date.now()}.png`;
           await storage.upload(r2Key, imageBuffer, 'image/png');
 
@@ -152,24 +212,12 @@ router.post('/regenerate/:imageId', authenticateToken, async (req: AuthRequest, 
       imagePrompt += '\n\n重点：生成不同的背景风格，保持产品展示区域一致';
     }
 
-    // 生成新图片
-    const response = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt: imagePrompt,
-      n: 1,
-      size: '1024x1792',
-      quality: 'standard',
-    });
+    // 使用 Gemini 生成新图片
+    const imageBuffer = await generateImageWithGemini(imagePrompt);
 
-    const imageUrl = response.data?.[0]?.url;
-
-    if (!imageUrl) {
+    if (!imageBuffer) {
       return res.status(500).json({ error: 'Failed to generate image' });
     }
-
-    // 下载并上传到 R2
-    const imageResponse = await fetch(imageUrl);
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
     const r2Key = `projects/${projectId}/generated/${sectionId}_${Date.now()}.png`;
     await storage.upload(r2Key, imageBuffer, 'image/png');

@@ -5,9 +5,14 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
+// 配置 OpenAI 客户端使用 VectorEngine AI 服务
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.vectorengine.ai/v1',
 });
+
+// 文本生成模型配置
+const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-2.5-flash';
 
 // 生成图文脚本
 router.post('/:projectId/generate', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -65,9 +70,9 @@ ${competitorInfo || '无竞品参考'}
 4. 第一张图应该是主视觉+核心卖点
 5. 最后一张图可以是购买引导或品牌信息`;
 
-    // 调用 OpenAI
+    // 调用 Gemini 模型
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: TEXT_MODEL,
       messages: [
         { role: 'system', content: '你是一个专业的电商详情页文案策划师，擅长撰写有吸引力的产品文案。请始终以JSON格式输出。' },
         { role: 'user', content: prompt },
@@ -82,7 +87,7 @@ ${competitorInfo || '无竞品参考'}
     try {
       scriptData = JSON.parse(responseText);
     } catch (e) {
-      console.error('Failed to parse OpenAI response:', responseText);
+      console.error('Failed to parse AI response:', responseText);
       return res.status(500).json({ error: 'Failed to parse AI response' });
     }
 
@@ -184,7 +189,7 @@ ${instruction ? `用户要求：${instruction}` : '请生成一个更有吸引�
 }`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: TEXT_MODEL,
       messages: [
         { role: 'system', content: '你是一个专业的电商详情页文案策划师。请始终以JSON格式输出。' },
         { role: 'user', content: prompt },
@@ -211,7 +216,7 @@ ${instruction ? `用户要求：${instruction}` : '请生成一个更有吸引�
   }
 });
 
-// OCR 提取竞品文案（模拟，实际需要接入OCR服务）
+// OCR 提取竞品文案（使用 Gemini Vision）
 router.post('/:projectId/extract-text', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
@@ -234,17 +239,16 @@ router.post('/:projectId/extract-text', authenticateToken, async (req: AuthReque
       return res.status(400).json({ error: 'No competitor images found' });
     }
 
-    // 使用 GPT-4 Vision 分析图片（如果有的话）
-    // 这里简化处理，实际应该调用 OCR 服务或 GPT-4 Vision
+    // 使用 Gemini Vision 分析图片
     const extractedTexts = [];
 
     for (const img of competitorImages) {
       const imageUrl = storage.getUrl(img.r2_key);
       
-      // 调用 GPT-4 Vision 分析图片
+      // 调用 Gemini Vision 分析图片
       try {
         const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: TEXT_MODEL,
           messages: [
             {
               role: 'user',
