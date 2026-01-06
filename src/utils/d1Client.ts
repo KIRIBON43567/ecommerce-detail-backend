@@ -109,9 +109,9 @@ export const storage = {
   
   upload: async (key: string, file: Buffer | Uint8Array, contentType: string) => {
     const formData = new FormData();
-    // 将 Buffer 转换为 Uint8Array 以确保类型兼容
-    const uint8Array = file instanceof Uint8Array ? file : new Uint8Array(file);
-    formData.append('file', new Blob([uint8Array], { type: contentType }), key);
+    // 将 Buffer/Uint8Array 转换为 ArrayBuffer 再创建 Blob 以确保类型兼容
+    const arrayBuffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+    formData.append('file', new Blob([arrayBuffer], { type: contentType }), key);
     formData.append('key', key);
     
     const response = await fetch(`${WORKERS_API_URL}/api/storage/upload`, {
